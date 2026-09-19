@@ -64,16 +64,21 @@ Shigotai/
       matching/        # deterministic + semantic matching engine, skill taxonomy
       ai/              # LLMProvider interface + dev (rule-based) and Anthropic-backed implementations
       ingestion/       # JobSourceAdapter interface + demo dataset + ingestion pipeline
-      notifications/   # EmailProvider interface + dev (file outbox) implementation + templates
+      notifications/   # EmailProvider interface + dev (file outbox) and Resend implementations + templates
+      storage/         # FileStorage interface + dev (local disk) and S3-compatible implementations
     alembic/           # migrations
     tests/             # pytest suite for matching/extraction/dedup/notifications
+    scripts/start.sh   # container entrypoint: run migrations, seed if DEMO_MODE, start uvicorn
     seed.py            # seeds demo jobs + a demo user
+    Dockerfile
   frontend/
     src/
       app/             # Next.js routes: (marketing), (auth), (app) route groups
       components/      # ui/ (design system primitives), layout/, jobs/, marketing/, motion/
       lib/             # api client, auth context, types, utils
     .qa/               # local screenshot tooling used during development (gitignored)
+    Dockerfile         # only needed if not deploying the frontend to Vercel
+  docker-compose.yml   # full stack incl. Postgres, for local prod-parity or single-VM self-hosting
   README.md
   .env.example
 ```
@@ -169,10 +174,17 @@ Prefer official APIs/feeds.**
 
 ## Adding a notification provider
 
-Implement `EmailProvider` or `PushProvider` (`backend/app/notifications/base.py`)
-and wire it into `app/services/notification_service.py` in place of
-`DevEmailProvider` when `EMAIL_PROVIDER` is not `dev`. The dev provider writes
-emails to `backend/var/outbox/` as inspectable `.html` files instead of sending.
+`EMAIL_PROVIDER=resend` (+ `EMAIL_API_KEY`) already switches every outgoing
+email (verify-email, password reset, job match alerts) to real delivery via
+[Resend](https://resend.com) using `app/notifications/resend_provider.py` --
+no code changes needed for that one. The dev provider (default) writes emails
+to `backend/var/outbox/` as inspectable `.html` files instead of sending.
+
+To add a different provider, implement `EmailProvider` or `PushProvider`
+(`backend/app/notifications/base.py`) and add it as another branch in
+`app/notifications/provider.py`'s `get_email_provider()` -- every call site
+already goes through that function rather than instantiating a provider
+directly.
 
 ## AI configuration
 
@@ -190,26 +202,86 @@ job postings, each flagged `is_demo_data: true` end-to-end and surfaced in the
 UI with a visible "Demo data" label — they are never presented as real, currently
 hiring postings.
 
-## Going to production
+## Deployment
 
-This repo is architected so the following swaps don't require touching business
-logic:
+The recommended path is **Vercel (frontend) + Render or Railway (backend) +
+Neon or Supabase (Postgres)** — each is a natural fit for its piece, all have
+free tiers, and none require you to manage a server. A single-VM
+`docker compose up` (see `docker-compose.yml`) is the alternative if you'd
+rather own one box than split hosting across three providers.
 
-- **Database**: change `DATABASE_URL` to a `postgresql+psycopg://...` URL. The
-  schema avoids SQLite-only types; the one exception is that vector similarity
-  is currently a hand-rolled concept-vector cosine similarity stored as JSON —
-  swapping to `pgvector` means changing `JobEmbedding.vector`'s column type and
-  `app/matching/embeddings.py`'s storage/query calls, not the matching logic.
-- **Background jobs**: replace the synchronous calls in
-  `app/services/match_service.py` with Celery/RQ tasks using `REDIS_URL`; the
-  function signatures (`recompute_matches_for_user`, `recompute_matches_for_job`)
-  are already the right granularity for task boundaries.
-- **Real job sources**: implement additional `JobSourceAdapter`s.
-- **Real LLM**: set `LLM_PROVIDER=anthropic` (or add another provider behind
-  the same `LLMProvider` interface).
-- **Email/Push**: implement `EmailProvider`/`PushProvider` for your provider of
-  choice; `WEB_PUSH_PUBLIC_KEY`/`WEB_PUSH_PRIVATE_KEY` are reserved for a real
-  `pywebpush` integration.
+### 1. Database
+
+Create a Postgres database on [Neon](https://neon.tech) or
+[Supabase](https://supabase.com) and copy its connection string. Set it as
+`DATABASE_URL`, adding `+psycopg` after `postgresql` if it isn't already
+there:
+
+```
+DATABASE_URL=postgresql+psycopg://user:password@host/dbname?sslmode=require
+```
+
+Nothing else changes — the schema and all queries are already
+Postgres-compatible (see `backend/app/database/session.py`).
+
+### 2. Backend (Render / Railway / Fly.io)
+
+`backend/Dockerfile` is ready to deploy as-is: point your host at the
+`backend/` directory, it'll detect the Dockerfile, and `scripts/start.sh`
+runs migrations (and seeds demo data if `DEMO_MODE=true`) before starting
+the server. Set these environment variables on the host:
+
+- `DATABASE_URL` (from step 1)
+- `AUTH_SECRET` — generate a real one: `python -c "import secrets; print(secrets.token_urlsafe(48))"`
+- `FRONTEND_BASE_URL` and `CORS_ORIGINS` — your Vercel URL (step 3); until
+  you have it, deploy once with the Render/Railway default subdomain as a
+  placeholder for the frontend, then update these two after step 3
+- `EMAIL_PROVIDER=resend` + `EMAIL_API_KEY` (get a free key at
+  [resend.com](https://resend.com)) — without this, emails just get logged
+  and no one receives them
+- `STORAGE_PROVIDER=s3` + `STORAGE_BUCKET`/`STORAGE_ACCESS_KEY_ID`/`STORAGE_SECRET_ACCESS_KEY`
+  (a free [Cloudflare R2](https://developers.cloudflare.com/r2/) bucket
+  works well; set `STORAGE_ENDPOINT_URL` to its account-specific endpoint) —
+  without this, uploaded resumes vanish on every redeploy since most hosts'
+  filesystems are ephemeral
+- Optionally `REDIS_URL` (a free [Upstash](https://upstash.com) Redis
+  instance) so rate limiting is shared correctly if you ever run more than
+  one backend instance
+- Health check path: `/health`
+
+### 3. Frontend (Vercel)
+
+Import the repo, set the project's root directory to `frontend/`, and set
+one environment variable: `NEXT_PUBLIC_API_BASE_URL` to your backend's public
+URL from step 2. Deploy. Then go back to step 2's host and update
+`FRONTEND_BASE_URL`/`CORS_ORIGINS` to the real `https://your-app.vercel.app`
+URL Vercel just gave you, and redeploy the backend so those take effect.
+
+### Self-hosting on one VM instead
+
+```bash
+cp .env.example .env   # fill in AUTH_SECRET at minimum
+docker compose up --build
+```
+
+This runs Postgres, the backend, and the frontend together with sensible
+defaults already wired between them (see `docker-compose.yml`).
+
+### What's still a placeholder either way
+
+- **Job sources**: only the demo dataset exists; implement additional
+  `JobSourceAdapter`s for real postings (section above).
+- **Real LLM**: set `LLM_PROVIDER=anthropic` + `LLM_API_KEY` for
+  LLM-generated match explanations; the rule-based provider is honest but
+  simple.
+- **Web Push**: `WEB_PUSH_PUBLIC_KEY`/`WEB_PUSH_PRIVATE_KEY` are reserved for
+  a real `pywebpush` integration; the settings page already tells users this
+  isn't wired up yet rather than pretending it works.
+- **Background workers**: match recomputation runs synchronously in-request
+  today, which is fine at demo scale. Swapping in Celery/RQ using `REDIS_URL`
+  means moving the calls in `app/services/match_service.py`
+  (`recompute_matches_for_user`, `recompute_matches_for_job`) into tasks —
+  the function boundaries are already the right granularity for that.
 
 ## Security notes
 
@@ -217,8 +289,10 @@ logic:
 - JWT access/refresh tokens; no session state stored server-side.
 - Resume uploads are validated by extension and size (5MB) before parsing.
 - `/auth/login`, `/auth/register`, and `/auth/password-reset/request` are
-  rate-limited per-IP (`app/core/rate_limit.py`) — an in-process limiter
-  appropriate for a single instance; put a shared-store limiter in front of it
-  for a multi-worker deployment.
+  rate-limited per-IP (`app/core/rate_limit.py`). Uses Redis when `REDIS_URL`
+  is set (correct across multiple instances); falls back to an in-process
+  limiter otherwise, which only enforces per-process, so it's not effective
+  if you scale the backend to multiple instances without also setting
+  `REDIS_URL`.
 - No secrets are committed; `.env` is gitignored and `.env.example` only holds
   placeholders.

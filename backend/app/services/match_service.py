@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.config import get_settings
 from app.matching.engine import compute_match
 from app.models.enums import JobStatus
 from app.models.interaction import Match
@@ -9,7 +10,9 @@ from app.models.profile import Profile
 from app.models.user import User
 from app.services.notification_service import maybe_notify
 
-FRONTEND_JOB_URL = "http://localhost:3000/jobs/{job_id}"
+
+def _job_url(job_id: str) -> str:
+    return f"{get_settings().frontend_base_url}/jobs/{job_id}"
 
 
 def recompute_matches_for_user(db: Session, user: User, notify: bool = True) -> list[Match]:
@@ -50,7 +53,7 @@ def recompute_matches_for_user(db: Session, user: User, notify: bool = True) -> 
                 previous_strength,
                 previous_pass,
                 user.email,
-                FRONTEND_JOB_URL.format(job_id=job.id),
+                _job_url(job.id),
             )
 
     db.commit()
@@ -87,7 +90,7 @@ def recompute_matches_for_job(db: Session, job: Job, notify: bool = True) -> lis
                 previous_strength,
                 previous_pass,
                 user.email,
-                FRONTEND_JOB_URL.format(job_id=job.id),
+                _job_url(job.id),
             )
 
     db.commit()

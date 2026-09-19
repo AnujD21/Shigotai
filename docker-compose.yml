@@ -1,0 +1,55 @@
+# Runs the full stack with a real Postgres database -- useful for
+# production-parity testing locally, or as a simple self-hosted deployment
+# on a single VM. Copy .env.example to .env first and fill in real secrets;
+# this file passes that same .env through to the backend.
+#
+#   docker compose up --build
+#
+# Frontend: http://localhost:3000  Backend: http://localhost:8000
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: shigotai
+      POSTGRES_PASSWORD: shigotai
+      POSTGRES_DB: shigotai
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shigotai"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://shigotai:shigotai@postgres:5432/shigotai
+      CORS_ORIGINS: http://localhost:3000
+      FRONTEND_BASE_URL: http://localhost:3000
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:

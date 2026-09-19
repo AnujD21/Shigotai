@@ -9,12 +9,16 @@ from app.models.user import User
 from app.schemas.profile import ResumeExtractionResult
 from app.services.profile_service import get_or_create_profile
 from app.services.resume_service import parse_resume
+from app.storage.provider import get_file_storage
 
 router = APIRouter(prefix="/resume", tags=["resume"])
 
 _ALLOWED_EXTENSIONS = {".pdf", ".docx"}
+_ALLOWED_CONTENT_TYPES = {
+    ".pdf": "application/pdf",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
 _MAX_SIZE_BYTES = 5 * 1024 * 1024
-_STORAGE_ROOT = Path(__file__).resolve().parents[2] / "var" / "resumes"
 
 
 @router.post("/upload", response_model=ResumeExtractionResult)
@@ -37,12 +41,14 @@ async def upload_resume(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
 
     profile = get_or_create_profile(db, current_user.id)
-    user_dir = _STORAGE_ROOT / current_user.id
-    user_dir.mkdir(parents=True, exist_ok=True)
-    stored_path = user_dir / f"resume{extension}"
-    stored_path.write_bytes(content)
+    storage = get_file_storage()
+    stored_ref = storage.save(
+        key=f"resumes/{current_user.id}/resume{extension}",
+        content=content,
+        content_type=_ALLOWED_CONTENT_TYPES[extension],
+    )
 
-    profile.resume_file_path = str(stored_path)
+    profile.resume_file_path = stored_ref
     profile.resume_original_filename = file.filename
     db.commit()
 

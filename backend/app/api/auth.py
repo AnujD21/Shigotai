@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
+from app.core.config import get_settings
 from app.core.rate_limit import rate_limit
 from app.core.security import (
     create_email_verification_token,
@@ -11,7 +12,7 @@ from app.core.security import (
 )
 from app.database.session import get_db
 from app.models.user import User
-from app.notifications.dev_providers import DevEmailProvider
+from app.notifications.provider import get_email_provider
 from app.schemas.auth import (
     EmailVerifyConfirm,
     LoginRequest,
@@ -24,6 +25,7 @@ from app.schemas.auth import (
 from app.services.auth_service import AuthError, authenticate_user, issue_tokens, register_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+settings = get_settings()
 
 
 @router.post(
@@ -39,10 +41,10 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
     verify_token = create_email_verification_token(user.id)
-    DevEmailProvider().send_email(
+    get_email_provider().send_email(
         user.email,
         "Verify your Shigotai account",
-        f'<p>Welcome to Shigotai. Verify your email: <a href="http://localhost:3000/verify-email?token={verify_token}">Verify Email</a></p>',
+        f'<p>Welcome to Shigotai. Verify your email: <a href="{settings.frontend_base_url}/verify-email?token={verify_token}">Verify Email</a></p>',
         f"Welcome to Shigotai. Verify your email using this token: {verify_token}",
     )
     access, refresh = issue_tokens(user)
@@ -86,10 +88,10 @@ def request_password_reset(payload: PasswordResetRequest, db: Session = Depends(
     user = db.query(User).filter(User.email == payload.email.lower()).first()
     if user:
         token = create_password_reset_token(user.id)
-        DevEmailProvider().send_email(
+        get_email_provider().send_email(
             user.email,
             "Reset your Shigotai password",
-            f'<p>Reset your password: <a href="http://localhost:3000/reset-password?token={token}">Reset Password</a></p>',
+            f'<p>Reset your password: <a href="{settings.frontend_base_url}/reset-password?token={token}">Reset Password</a></p>',
             f"Reset your password using this token: {token}",
         )
     # Always return 202 regardless of whether the email exists, to avoid
