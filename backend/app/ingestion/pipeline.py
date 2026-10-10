@@ -35,12 +35,20 @@ def _get_or_create_source(db: Session, adapter: JobSourceAdapter) -> JobSource:
     return source
 
 
+def _unique_slug(db: Session, name: str) -> str:
+    base = slugify(name) or "company"
+    slug, suffix = base, 2
+    while db.query(Company.id).filter(Company.slug == slug).first():
+        slug, suffix = f"{base}-{suffix}", suffix + 1
+    return slug
+
+
 def _get_or_create_company(db: Session, raw: RawJobPosting) -> Company:
     company = db.query(Company).filter(Company.name == raw.company_name).first()
     if company is None:
         company = Company(
             name=raw.company_name,
-            slug=slugify(raw.company_name),
+            slug=_unique_slug(db, raw.company_name),
             website=raw.company_website,
             industry=raw.industry,
         )
@@ -61,20 +69,51 @@ def _find_duplicate(db: Session, company: Company, raw: RawJobPosting, source: J
 
     # Cross-source dedup fallback: same company + normalized title + location,
     # which catches the same opening posted on a company page and an ATS.
+    # Only across *different* sources -- within one board the posting id is
+    # authoritative, and companies routinely list several separate openings
+    # with an identical title and city (e.g. two "Account Executive, Tokyo").
     normalized_title = raw.title.strip().lower()
-    candidates = db.query(Job).filter(Job.company_id == company.id).all()
+    candidates = db.query(Job).filter(Job.company_id == company.id, Job.source_id != source.id).all()
     for candidate in candidates:
         if candidate.title.strip().lower() == normalized_title and (candidate.location or "") == (raw.location or ""):
             return candidate
     return None
 
 
-def ingest_source(db: Session, adapter: JobSourceAdapter, is_demo: bool = False) -> list[Job]:
+def _close_missing(db: Session, source: JobSource, seen_job_ids: set[str], now: datetime) -> int:
+    """Mark this source's still-open jobs that weren't in the latest fetch as
+    CLOSED: a posting removed from the employer's own board is filled or
+    withdrawn. Only called after a fetch that fully succeeded."""
+    missing = (
+        db.query(Job)
+        .filter(Job.source_id == source.id, Job.status != JobStatus.CLOSED, Job.id.notin_(seen_job_ids or {""}))
+        .all()
+    )
+    for job in missing:
+        job.status = JobStatus.CLOSED
+        job.last_verified_at = now
+        db.add(JobVerification(job_id=job.id, checked_at=now, status_found=JobStatus.CLOSED, evidence="No longer listed on source board"))
+    return len(missing)
+
+
+def ingest_source(
+    db: Session, adapter: JobSourceAdapter, is_demo: bool = False, close_missing: bool = False
+) -> list[Job]:
+    """Upsert every posting the adapter returns.
+
+    With `close_missing`, jobs from this source that are absent from the
+    fetch are marked CLOSED -- use it for live boards that list every open
+    role (it's how "still hiring" stays truthful without re-checking each
+    posting individually).
+    """
+    # Fetch before touching the database: if the source is down, this raises
+    # and nothing is changed -- in particular, nothing gets closed.
+    postings = adapter.fetch_jobs()
     source = _get_or_create_source(db, adapter)
     now = datetime.now(timezone.utc)
     ingested: list[Job] = []
 
-    for raw in adapter.fetch_jobs():
+    for raw in postings:
         company = _get_or_create_company(db, raw)
         duplicate = _find_duplicate(db, company, raw, source)
         new_hash = _content_hash(raw)
@@ -129,6 +168,9 @@ def ingest_source(db: Session, adapter: JobSourceAdapter, is_demo: bool = False)
 
         db.flush()
         ingested.append(job)
+
+    if close_missing:
+        _close_missing(db, source, {job.id for job in ingested}, now)
 
     db.commit()
     return ingested

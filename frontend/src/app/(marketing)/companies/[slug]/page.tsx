@@ -99,8 +99,8 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
           <p className="mt-4 text-[14px] text-[var(--color-text-secondary)]">No open positions listed right now.</p>
         ) : (
           <div className="mt-5 grid gap-4 md:grid-cols-2">
-            {company.open_positions.map((job) => (
-              <JobCard key={job.id} job={job} />
+            {company.open_positions.map((job, i) => (
+              <JobCard key={job.id} job={job} index={i} />
             ))}
           </div>
         )}

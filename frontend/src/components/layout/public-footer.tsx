@@ -43,8 +43,8 @@ export function PublicFooter() {
           </div>
         </div>
         <div className="mt-10 flex flex-col gap-2 border-t border-[var(--color-border)] pt-6 text-[12.5px] text-[var(--color-text-tertiary)] sm:flex-row sm:items-center sm:justify-between">
-          <p>&copy; {new Date().getFullYear()} Shigotai. Demo product for illustrative purposes.</p>
-          <p>Job listings marked &ldquo;Demo data&rdquo; are fictional and not real postings.</p>
+          <p>&copy; {new Date().getFullYear()} Shigotai. Listings come from employers&apos; public career boards.</p>
+          <p>Always confirm details on the employer&apos;s posting before applying.</p>
         </div>
       </div>
     </footer>

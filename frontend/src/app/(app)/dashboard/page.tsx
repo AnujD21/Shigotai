@@ -21,6 +21,7 @@ import { LinkButton } from "@/components/ui/link-button";
 import { JobCard } from "@/components/jobs/job-card";
 import { StatTile } from "@/components/dashboard/stat-tile";
 import { BarList } from "@/components/dashboard/bar-list";
+import { Stagger, StaggerItem } from "@/components/motion/stagger";
 import { useAuth } from "@/lib/auth-context";
 import { formatRelativeTime } from "@/lib/utils";
 import type { DashboardSummary, NotificationOut, NotificationType } from "@/lib/types";
@@ -108,15 +109,17 @@ function DashboardContent({ data }: { data: DashboardSummary }) {
       </Card>
 
       {/* Stat tiles */}
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
+      <Stagger onMount delay={0.1} className="grid grid-cols-2 gap-4 md:grid-cols-5">
         {statTiles.map((tile) => (
-          <StatTile key={tile.label} label={tile.label} value={tile.value} icon={tile.icon} />
+          <StaggerItem key={tile.label} className="h-full">
+            <StatTile label={tile.label} value={tile.value} icon={tile.icon} />
+          </StaggerItem>
         ))}
-      </div>
+      </Stagger>
 
       {/* Top matches */}
       <section>
-        <h2 className="text-[17px] font-semibold tracking-tight text-[var(--color-text-primary)]">
+        <h2 className="font-display text-[19px] font-semibold tracking-tight text-[var(--color-text-primary)]">
           Jobs matching you
         </h2>
         {data.top_matches.length === 0 ? (
@@ -134,8 +137,8 @@ function DashboardContent({ data }: { data: DashboardSummary }) {
           </div>
         ) : (
           <div className="mt-5 grid gap-4 md:grid-cols-2">
-            {data.top_matches.map((job) => (
-              <JobCard key={job.id} job={job} />
+            {data.top_matches.map((job, i) => (
+              <JobCard key={job.id} job={job} index={i} />
             ))}
           </div>
         )}
@@ -187,7 +190,7 @@ function DashboardContent({ data }: { data: DashboardSummary }) {
 
       {/* Recent alerts */}
       <section>
-        <h2 className="text-[17px] font-semibold tracking-tight text-[var(--color-text-primary)]">Recent alerts</h2>
+        <h2 className="font-display text-[19px] font-semibold tracking-tight text-[var(--color-text-primary)]">Recent alerts</h2>
         <Card className="mt-5">
           {data.recent_alerts.length === 0 ? (
             <CardContent className="pt-5">

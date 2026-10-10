@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.api.deps import get_current_user_optional
 from app.database.session import get_db
 from app.models.company import Company
+from app.models.enums import JobStatus
 from app.models.job import Job
 from app.models.profile import Profile
 from app.models.user import User
@@ -14,7 +15,8 @@ router = APIRouter(prefix="/companies", tags=["companies"])
 
 @router.get("", response_model=list[CompanyOut])
 def list_companies(db: Session = Depends(get_db)):
-    return db.query(Company).order_by(Company.name).all()
+    hiring = db.query(Job.company_id).filter(Job.status != JobStatus.CLOSED)
+    return db.query(Company).filter(Company.id.in_(hiring)).order_by(Company.name).all()
 
 
 def _compatibility(profile: Profile | None, company: Company) -> list[CompatibilityBand]:
@@ -71,6 +73,6 @@ def get_company(slug: str, current_user: User | None = Depends(get_current_user_
 
     return CompanyDetail(
         **CompanyOut.model_validate(company, from_attributes=True).model_dump(),
-        open_positions=company.jobs,
+        open_positions=[job for job in company.jobs if job.status != JobStatus.CLOSED],
         compatibility=_compatibility(profile, company) if current_user else None,
     )

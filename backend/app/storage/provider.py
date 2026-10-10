@@ -5,9 +5,23 @@ from app.storage.base import FileStorage
 from app.storage.dev_provider import DevFileStorage
 
 
+class NoFileStorage(FileStorage):
+    """Doesn't keep uploaded files at all.
+
+    The resume is parsed in memory and only the extracted, user-approved
+    fields are saved -- the right default for serverless hosts with no
+    writable disk, and the most privacy-friendly option.
+    """
+
+    def save(self, key: str, content: bytes, content_type: str) -> str:
+        return ""
+
+
 @lru_cache
 def get_file_storage() -> FileStorage:
     settings = get_settings()
+    if settings.storage_provider == "none":
+        return NoFileStorage()
     if settings.storage_provider == "s3":
         from app.storage.s3_provider import S3FileStorage
 

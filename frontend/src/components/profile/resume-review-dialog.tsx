@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { Sparkles } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -133,6 +135,22 @@ export function ResumeReviewDialog({
           Review what we found. Uncheck anything you don&apos;t want to add — nothing is saved to your profile until
           you confirm here and then click Save changes below.
         </p>
+
+        <div className="flex flex-wrap items-center gap-2 text-[12.5px] text-[var(--color-text-tertiary)]">
+          {result.extraction_method === "ai" ? (
+            <Badge tone="accent">
+              <Sparkles className="size-3" aria-hidden />
+              Read by AI, checked against your file
+            </Badge>
+          ) : (
+            <Badge>Keyword-based extraction</Badge>
+          )}
+          {result.years_of_experience != null && result.years_of_experience > 0 && (
+            <span>
+              About {result.years_of_experience} years of full-time experience, from your roles&apos; dates
+            </span>
+          )}
+        </div>
 
         {result.warnings.length > 0 && (
           <ul className="space-y-1 rounded-[var(--radius-sm)] bg-[var(--color-warning-subtle)] p-3 text-[12.5px] text-[var(--color-warning)]">

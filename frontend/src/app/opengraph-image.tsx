@@ -24,16 +24,16 @@ export default function OpengraphImage() {
               width: 44,
               height: 44,
               borderRadius: 9,
-              background: "#17170f",
+              background: "#b13a2f",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              color: "#fafaf8",
+              color: "#fdf9f6",
               fontSize: 22,
               fontWeight: 700,
             }}
           >
-            士
+            仕
           </div>
           <div style={{ fontSize: 30, fontWeight: 600, color: "#17170f" }}>Shigotai</div>
         </div>

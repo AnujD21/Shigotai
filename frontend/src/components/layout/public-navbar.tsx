@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { AnimatePresence, motion, useMotionValueEvent, useScroll } from "framer-motion";
 import { Menu, X } from "lucide-react";
 import { Logo } from "@/components/ui/logo";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
@@ -20,25 +21,52 @@ export function PublicNavbar() {
   const pathname = usePathname();
   const { user, isLoading } = useAuth();
   const [open, setOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+  const [hovered, setHovered] = useState<string | null>(null);
+
+  const { scrollY } = useScroll();
+  useMotionValueEvent(scrollY, "change", (y) => setScrolled(y > 8));
+
+  const activeHref = LINKS.find((link) => pathname.startsWith(link.href))?.href ?? null;
+  const pillHref = hovered ?? activeHref;
 
   return (
-    <header className="sticky top-0 z-40 border-b border-[var(--color-border)] bg-[var(--color-bg)]/85 backdrop-blur-sm">
+    <header
+      className={cn(
+        "sticky top-0 z-40 border-b transition-[background-color,border-color,backdrop-filter] duration-300",
+        scrolled || open
+          ? "border-[var(--color-border)] bg-[var(--color-bg)]/80 backdrop-blur-md"
+          : "border-transparent bg-transparent"
+      )}
+    >
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5 md:px-8">
         <Logo />
 
-        <nav className="hidden items-center gap-7 md:flex">
-          {LINKS.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className={cn(
-                "text-[13.5px] font-medium text-[var(--color-text-secondary)] transition-colors hover:text-[var(--color-text-primary)]",
-                pathname.startsWith(link.href) && "text-[var(--color-text-primary)]"
-              )}
-            >
-              {link.label}
-            </Link>
-          ))}
+        <nav className="hidden items-center gap-1 md:flex" onMouseLeave={() => setHovered(null)}>
+          {LINKS.map((link) => {
+            const active = link.href === activeHref;
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                onMouseEnter={() => setHovered(link.href)}
+                aria-current={active ? "page" : undefined}
+                className={cn(
+                  "relative rounded-full px-3.5 py-1.5 text-[13.5px] font-medium text-[var(--color-text-secondary)] transition-colors hover:text-[var(--color-text-primary)]",
+                  active && "text-[var(--color-text-primary)]"
+                )}
+              >
+                {pillHref === link.href && (
+                  <motion.span
+                    layoutId="nav-pill"
+                    className="absolute inset-0 -z-10 rounded-full bg-[var(--color-bg-subtle)]"
+                    transition={{ type: "spring", stiffness: 380, damping: 32 }}
+                  />
+                )}
+                {link.label}
+              </Link>
+            );
+          })}
         </nav>
 
         <div className="hidden items-center gap-2 md:flex">
@@ -61,48 +89,70 @@ export function PublicNavbar() {
 
         <button
           type="button"
-          className="flex size-9 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-primary)] md:hidden"
+          className="flex size-10 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-primary)] md:hidden"
           onClick={() => setOpen((v) => !v)}
           aria-label={open ? "Close menu" : "Open menu"}
           aria-expanded={open}
         >
-          {open ? <X className="size-5" /> : <Menu className="size-5" />}
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.span
+              key={open ? "close" : "open"}
+              initial={{ opacity: 0, rotate: -45 }}
+              animate={{ opacity: 1, rotate: 0 }}
+              exit={{ opacity: 0, rotate: 45 }}
+              transition={{ duration: 0.15 }}
+            >
+              {open ? <X className="size-5" /> : <Menu className="size-5" />}
+            </motion.span>
+          </AnimatePresence>
         </button>
       </div>
 
-      {open && (
-        <div className="border-t border-[var(--color-border)] px-5 py-4 md:hidden">
-          <nav className="flex flex-col gap-1">
-            {LINKS.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                onClick={() => setOpen(false)}
-                className="rounded-[var(--radius-sm)] px-2 py-2.5 text-[14px] font-medium text-[var(--color-text-primary)] hover:bg-[var(--color-bg-subtle)]"
-              >
-                {link.label}
-              </Link>
-            ))}
-          </nav>
-          <div className="mt-3 flex items-center gap-2 border-t border-[var(--color-border)] pt-3">
-            <ThemeToggle />
-            {!isLoading && user ? (
-              <LinkButton href="/dashboard" variant="secondary" size="sm" className="flex-1">
-                Dashboard
-              </LinkButton>
-            ) : (
-              <>
-                <LinkButton href="/login" variant="ghost" size="sm" className="flex-1">
-                  Log in
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            className="border-t border-[var(--color-border)] px-5 py-4 md:hidden"
+          >
+            <nav className="flex flex-col gap-1">
+              {LINKS.map((link) => (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  onClick={() => setOpen(false)}
+                  aria-current={link.href === activeHref ? "page" : undefined}
+                  className={cn(
+                    "rounded-[var(--radius-sm)] px-2 py-2.5 text-[14px] font-medium text-[var(--color-text-primary)] hover:bg-[var(--color-bg-subtle)]",
+                    link.href === activeHref && "bg-[var(--color-bg-subtle)]"
+                  )}
+                >
+                  {link.label}
+                </Link>
+              ))}
+            </nav>
+            <div className="mt-3 flex items-center gap-2 border-t border-[var(--color-border)] pt-3">
+              <ThemeToggle />
+              {!isLoading && user ? (
+                <LinkButton href="/dashboard" variant="secondary" size="sm" className="flex-1">
+                  Dashboard
                 </LinkButton>
-                <LinkButton href="/register" variant="accent" size="sm" className="flex-1">
-                  Sign up
-                </LinkButton>
-              </>
-            )}
-          </div>
-        </div>
-      )}
+              ) : (
+                <>
+                  <LinkButton href="/login" variant="ghost" size="sm" className="flex-1">
+                    Log in
+                  </LinkButton>
+                  <LinkButton href="/register" variant="accent" size="sm" className="flex-1">
+                    Sign up
+                  </LinkButton>
+                </>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </header>
   );
 }

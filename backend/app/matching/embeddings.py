@@ -16,32 +16,30 @@ EmbeddingProvider implementation with the same `vectorize` signature.
 """
 
 import hashlib
-import re
 
 import numpy as np
 
-from app.matching.skill_taxonomy import SEMANTIC_SKILL_GROUPS, SKILL_CATALOG
+from app.matching.skill_taxonomy import SEMANTIC_SKILL_GROUPS, SKILL_CATALOG, find_skills, term_pattern
 
 _SKILL_DIMENSIONS = sorted(SKILL_CATALOG.keys())
 _GROUP_DIMENSIONS = list(range(len(SEMANTIC_SKILL_GROUPS)))
 VECTOR_SIZE = len(_SKILL_DIMENSIONS) + len(_GROUP_DIMENSIONS)
 
 
-def _tokenize(text: str) -> str:
-    return re.sub(r"[^a-z0-9\+\.# ]", " ", text.lower())
+_GROUP_PATTERNS = [[term_pattern(term) for term in group] for group in SEMANTIC_SKILL_GROUPS]
 
 
 def vectorize_text(text: str) -> list[float]:
-    lowered = _tokenize(text)
     vector = np.zeros(VECTOR_SIZE, dtype=float)
 
+    present = set(find_skills(text))
     for i, skill in enumerate(_SKILL_DIMENSIONS):
-        if skill.lower() in lowered:
+        if skill in present:
             vector[i] = 1.0
 
     offset = len(_SKILL_DIMENSIONS)
-    for i, group in enumerate(SEMANTIC_SKILL_GROUPS):
-        if any(term in lowered for term in group):
+    for i, patterns in enumerate(_GROUP_PATTERNS):
+        if any(p.search(text) for p in patterns):
             vector[offset + i] = 1.0
 
     return vector.tolist()

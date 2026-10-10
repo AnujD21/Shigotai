@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import TypedDict
 
+from app.ai.schemas import ResumeLLMExtraction
+
 
 class ExtractionJSON(TypedDict):
     required_skills: list[str]
@@ -23,6 +25,10 @@ class LLMProvider(ABC):
     choice -- see master spec section 50 (FACT vs AI INTERPRETATION vs UNKNOWN).
     """
 
+    # True for providers that call a real model; used to label extraction
+    # provenance (LLM vs RULE_BASED) on stored requirements.
+    is_llm: bool = False
+
     @abstractmethod
     def extract_requirements(self, job_title: str, description: str, language: str) -> ExtractionJSON: ...
 
@@ -34,3 +40,8 @@ class LLMProvider(ABC):
         requirement_breakdown: list[dict],
         match_strength: str,
     ) -> str: ...
+
+    def extract_resume(self, resume_text: str) -> ResumeLLMExtraction | None:
+        """Structured resume fields, or None when this provider can't (the
+        caller then falls back to heuristic parsing)."""
+        return None

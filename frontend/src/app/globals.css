@@ -156,6 +156,7 @@
 
   --font-sans: var(--font-plex-sans), var(--font-plex-sans-jp), "Hiragino Sans", sans-serif;
   --font-jp: var(--font-plex-sans-jp), var(--font-plex-sans), sans-serif;
+  --font-display: var(--font-noto-serif-jp), "Hiragino Mincho ProN", "Yu Mincho", serif;
 
   --radius-sm: var(--radius-sm);
   --radius-md: var(--radius-md);
@@ -167,8 +168,12 @@
   --shadow-md: var(--shadow-md);
   --shadow-lg: var(--shadow-lg);
 
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+
   --animate-fade-in: fade-in 0.4s ease-out;
   --animate-rise-in: rise-in 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-marquee: marquee var(--marquee-duration, 40s) linear infinite;
+  --animate-shimmer: shimmer 1.8s ease-in-out infinite;
 
   @keyframes fade-in {
     from { opacity: 0; }
@@ -178,6 +183,93 @@
     from { opacity: 0; transform: translateY(8px); }
     to { opacity: 1; transform: translateY(0); }
   }
+  @keyframes marquee {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+  }
+  @keyframes shimmer {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(100%); }
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Surfaces & effects
+--------------------------------------------------------------------------- */
+
+/* Fine paper grain, so large flat surfaces don't read as sterile. Tinted
+   by the page itself (soft-light), so it works in both themes. */
+.grain {
+  position: relative;
+  isolation: isolate;
+}
+.grain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.35;
+  mix-blend-mode: soft-light;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+}
+
+/* Faint dot grid that fades out toward the edges. */
+.dot-grid {
+  background-image: radial-gradient(var(--color-border-strong) 1px, transparent 1px);
+  background-size: 22px 22px;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, black 30%, transparent 75%);
+}
+
+/* Card border that lights up under the cursor. --spot-x/--spot-y are set by
+   <SpotlightCard> on pointer move without re-rendering React. */
+.spotlight {
+  position: relative;
+}
+.spotlight::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  background: radial-gradient(
+    260px circle at var(--spot-x, 50%) var(--spot-y, 50%),
+    color-mix(in srgb, var(--color-accent) 55%, transparent),
+    transparent 70%
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+}
+.spotlight:hover::before {
+  opacity: 1;
+}
+
+/* Edge fade for horizontally scrolling rows (marquee). */
+.fade-x {
+  mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
+}
+
+.skip-link {
+  position: fixed;
+  left: 16px;
+  top: 12px;
+  z-index: 100;
+  border-radius: var(--radius-sm);
+  background: var(--color-text-primary);
+  color: var(--color-bg);
+  padding: 10px 14px;
+  font-size: 13.5px;
+  font-weight: 500;
+  /* Off-screen by its own height (whatever the font makes it) until focused. */
+  transform: translateY(calc(-100% - 24px));
+  transition: transform 0.2s ease;
+}
+.skip-link:focus {
+  transform: translateY(0);
 }
 
 @layer base {
@@ -187,12 +279,23 @@
 
   html {
     color-scheme: light;
+    scroll-behavior: smooth;
   }
 
   body {
     background: var(--color-bg);
     color: var(--color-text-primary);
     font-feature-settings: "cv05", "cv11";
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
   }
 
   ::selection {

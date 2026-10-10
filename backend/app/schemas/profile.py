@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from app.models.enums import EmploymentType, JapaneseLevel, JLPTLevel, WorkMode
@@ -123,5 +125,8 @@ class ResumeExtractionResult(BaseModel):
     certifications: list[CertificationIn]
     skills: list[SkillIn]
     jlpt_level: JLPTLevel | None = None
+    years_of_experience: float | None = None
     source_filename: str
     warnings: list[str] = Field(default_factory=list)
+    # "ai" when an LLM structured the resume, "rules" for the heuristic parser.
+    extraction_method: Literal["ai", "rules"] = "rules"

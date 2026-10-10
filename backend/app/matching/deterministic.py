@@ -6,6 +6,7 @@ never a bare percentage.
 
 from dataclasses import dataclass, field
 
+from app.matching.skill_taxonomy import skill_key
 from app.models.enums import JLPTLevel
 from app.models.job import JobRequirement
 from app.models.profile import Profile
@@ -43,7 +44,7 @@ class DeterministicResult:
 
 
 def _user_skill_names(profile: Profile) -> set[str]:
-    return {us.skill.name.lower() for us in profile.skills if us.skill}
+    return {skill_key(us.skill.name) for us in profile.skills if us.skill}
 
 
 def evaluate(profile: Profile, requirement: JobRequirement, job_location: str | None, job_work_mode: str) -> DeterministicResult:
@@ -96,7 +97,7 @@ def evaluate(profile: Profile, requirement: JobRequirement, job_location: str | 
     if requirement.required_skills:
         matched = 0
         for skill in requirement.required_skills:
-            hit = skill.lower() in user_skills
+            hit = skill_key(skill) in user_skills
             matched += 1 if hit else 0
             result.rows.append(
                 RequirementRow(skill, "required_skill", "MATCH" if hit else "MISSING", "" if hit else "Not on your profile")
@@ -106,7 +107,7 @@ def evaluate(profile: Profile, requirement: JobRequirement, job_location: str | 
     if requirement.preferred_skills:
         matched = 0
         for skill in requirement.preferred_skills:
-            hit = skill.lower() in user_skills
+            hit = skill_key(skill) in user_skills
             matched += 1 if hit else 0
             result.rows.append(
                 RequirementRow(

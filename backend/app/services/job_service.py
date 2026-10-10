@@ -26,7 +26,11 @@ class JobFilters:
 
 
 def list_jobs(db: Session, filters: JobFilters, user_id: str | None = None) -> tuple[list[Job], int]:
-    query = db.query(Job).options(joinedload(Job.company), joinedload(Job.requirement))
+    query = (
+        db.query(Job)
+        .options(joinedload(Job.company), joinedload(Job.requirement))
+        .filter(Job.status != JobStatus.CLOSED)
+    )
 
     if filters.search:
         like = f"%{filters.search}%"

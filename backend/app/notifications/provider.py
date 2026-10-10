@@ -12,4 +12,14 @@ def get_email_provider() -> EmailProvider:
         from app.notifications.resend_provider import ResendEmailProvider
 
         return ResendEmailProvider(settings.email_api_key, settings.email_from)
+    if settings.email_provider == "smtp" and settings.smtp_host:
+        from app.notifications.smtp_provider import SMTPEmailProvider
+
+        return SMTPEmailProvider(
+            settings.smtp_host,
+            settings.smtp_port,
+            settings.smtp_username,
+            settings.smtp_password,
+            settings.email_from,
+        )
     return DevEmailProvider()

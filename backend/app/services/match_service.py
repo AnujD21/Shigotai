@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import get_settings
-from app.matching.engine import compute_match
+from app.matching.engine import compute_match, fill_missing_explanations
 from app.models.enums import JobStatus
 from app.models.interaction import Match
 from app.models.job import Job
@@ -41,7 +41,7 @@ def recompute_matches_for_user(db: Session, user: User, notify: bool = True) -> 
         previous_strength = previous.match_strength if previous else None
         previous_pass = previous.deterministic_pass if previous else None
 
-        match = compute_match(db, profile, job)
+        match = compute_match(db, profile, job, generate_explanation=False)
         results.append(match)
 
         if notify and preference:
@@ -56,6 +56,7 @@ def recompute_matches_for_user(db: Session, user: User, notify: bool = True) -> 
                 _job_url(job.id),
             )
 
+    fill_missing_explanations(list(zip(results, jobs)), get_settings().max_llm_explanations_per_recompute)
     db.commit()
     return results
 
@@ -77,7 +78,7 @@ def recompute_matches_for_job(db: Session, job: Job, notify: bool = True) -> lis
         previous_strength = previous.match_strength if previous else None
         previous_pass = previous.deterministic_pass if previous else None
 
-        match = compute_match(db, profile, job)
+        match = compute_match(db, profile, job, generate_explanation=False)
         results.append(match)
 
         preference = preference_by_user.get(user.id)
@@ -93,5 +94,8 @@ def recompute_matches_for_job(db: Session, job: Job, notify: bool = True) -> lis
                 _job_url(job.id),
             )
 
+    fill_missing_explanations(
+        [(match, job) for match in results], get_settings().max_llm_explanations_per_recompute
+    )
     db.commit()
     return results

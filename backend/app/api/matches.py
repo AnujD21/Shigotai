@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import get_current_user
 from app.database.session import get_db
-from app.models.enums import MatchStrength
+from app.models.enums import JobStatus, MatchStrength
 from app.models.interaction import Match
 from app.models.job import Job
 from app.models.user import User
@@ -23,7 +23,8 @@ def get_matches(
     query = (
         db.query(Match)
         .options(joinedload(Match.job).joinedload(Job.company), joinedload(Match.job).joinedload(Job.requirement))
-        .filter(Match.user_id == current_user.id)
+        .join(Match.job)
+        .filter(Match.user_id == current_user.id, Job.status != JobStatus.CLOSED)
     )
     if min_strength:
         order = [MatchStrength.SIGNIFICANT_GAPS, MatchStrength.PARTIAL, MatchStrength.STRONG]

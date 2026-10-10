@@ -247,6 +247,9 @@ export interface ResumeExtractionResult {
   certifications: CertificationEntry[];
   skills: SkillEntry[];
   jlpt_level: JLPTLevel | null;
+  years_of_experience: number | null;
   source_filename: string;
   warnings: string[];
+  /** "ai" when an LLM structured the resume; "rules" for the keyword-based fallback. */
+  extraction_method: "ai" | "rules";
 }

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import get_current_user
 from app.database.session import get_db
-from app.models.enums import MatchStrength
+from app.models.enums import JobStatus, MatchStrength
 from app.models.interaction import Application, Match, SavedJob
 from app.models.job import Job
 from app.models.notification import Notification
@@ -50,12 +50,14 @@ def dashboard_summary(current_user: User = Depends(get_current_user), db: Sessio
     completeness, suggestions = compute_completeness(profile) if profile else (0, [])
 
     since_today = datetime.now(timezone.utc) - timedelta(hours=24)
-    new_jobs_today = db.query(Job).filter(Job.first_seen_at >= since_today).count()
+    open_jobs = Job.status != JobStatus.CLOSED
+    new_jobs_today = db.query(Job).filter(Job.first_seen_at >= since_today, open_jobs).count()
 
     matches = (
         db.query(Match)
         .options(joinedload(Match.job).joinedload(Job.company), joinedload(Match.job).joinedload(Job.requirement))
-        .filter(Match.user_id == current_user.id)
+        .join(Match.job)
+        .filter(Match.user_id == current_user.id, open_jobs)
         .order_by(Match.overall_score.desc())
         .all()
     )
@@ -67,7 +69,7 @@ def dashboard_summary(current_user: User = Depends(get_current_user), db: Sessio
 
     saved_count = db.query(SavedJob).filter(SavedJob.user_id == current_user.id, SavedJob.archived.is_(False)).count()
     applications_count = db.query(Application).filter(Application.user_id == current_user.id).count()
-    companies_hiring = db.query(Job.company_id).distinct().count()
+    companies_hiring = db.query(Job.company_id).filter(open_jobs).distinct().count()
 
     gap_counter: Counter[str] = Counter()
     for m in matches[:20]:
@@ -77,7 +79,7 @@ def dashboard_summary(current_user: User = Depends(get_current_user), db: Sessio
     skill_gaps = [SkillGapItem(skill=skill, missing_count=count) for skill, count in gap_counter.most_common(6)]
 
     jlpt_counter: Counter[str] = Counter()
-    for job in db.query(Job).options(joinedload(Job.requirement)).all():
+    for job in db.query(Job).options(joinedload(Job.requirement)).filter(open_jobs).all():
         if job.requirement and job.requirement.jlpt_requirement:
             jlpt_counter[job.requirement.jlpt_requirement.value] += 1
         elif job.requirement and job.requirement.japanese_requirement_raw:

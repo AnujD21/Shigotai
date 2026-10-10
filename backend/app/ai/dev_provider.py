@@ -9,19 +9,38 @@ product rule (master spec section 9 & 50).
 import re
 
 from app.ai.base import ExtractionJSON, LLMProvider
-from app.matching.skill_taxonomy import SKILL_CATALOG
+from app.matching.skill_taxonomy import find_skills
 
-_JLPT_PATTERN = re.compile(r"(?:JLPT\s*)?N([1-5])", re.IGNORECASE)
+# "N2" only counts as a JLPT level when it stands alone (not "N2O", "4N2") and
+# sits next to Japanese-language context -- real postings contain plenty of
+# other N-numbers (product codes, model names).
+_JLPT_PATTERN = re.compile(r"(?<![A-Za-z0-9])(JLPT\s*)?N([1-5])(?![0-9A-Za-z])", re.IGNORECASE)
 _JLPT_JA_PATTERN = re.compile(r"日本語(?:能力|能力試験)?\s*N([1-5])")
-_EXPERIENCE_PATTERN = re.compile(r"(\d+)\+?\s*(?:years?|年)\b")
+_JLPT_CONTEXT = re.compile(r"japanese|jlpt|日本語|level|レベル|以上|相当", re.IGNORECASE)
+# Years of experience: 1-2 digits (never a calendar year like 2026年), and
+# only when "experience" is nearby so "100 years of history" doesn't count.
+_EXPERIENCE_EN_PATTERN = re.compile(
+    r"(?<!\d)(\d{1,2})\s*\+?\s*(?:or more\s+|plus\s+)?years?\b(?=[^.\n]{0,40}\bexperience)", re.IGNORECASE
+)
+_EXPERIENCE_JA_PATTERN = re.compile(r"経験[^。\n]{0,20}?(?<!\d)(\d{1,2})\s*年以上")
+_MAX_PLAUSIBLE_EXPERIENCE = 15
 _PREFERRED_MARKERS = [
     "preferred", "nice to have", "nice-to-have", "a plus", "bonus", "歓迎", "尚可", "望ましい",
 ]
 _REQUIRED_MARKERS = ["required", "must have", "must-have", "essential", "必須"]
 _NEW_GRAD_POSITIVE = ["new graduate", "new grad", "fresher", "entry level", "entry-level", "新卒", "第二新卒"]
 _NEW_GRAD_NEGATIVE = ["experienced candidates only", "no new graduates", "経験者のみ"]
-_VISA_POSITIVE = ["visa sponsorship available", "will sponsor", "sponsorship provided", "visa support available", "ビザサポートあり", "就労ビザ支援"]
-_VISA_NEGATIVE = ["no visa sponsorship", "sponsorship not available", "must have existing work visa", "ビザサポートなし"]
+_VISA_POSITIVE = [
+    "visa sponsorship available", "visa sponsorship is available", "will sponsor", "we sponsor", "sponsorship provided",
+    "visa support available", "visa support is available", "ビザサポートあり", "就労ビザ支援", "ビザ取得サポート",
+]
+# Checked before the positive markers: "no visa sponsorship available" must
+# not be read as an offer just because it contains "visa sponsorship available".
+_VISA_NEGATIVE = [
+    "no visa sponsorship", "sponsorship not available", "sponsorship is not available", "must have existing work visa",
+    "unable to sponsor", "cannot sponsor", "can't sponsor", "not able to sponsor", "does not sponsor",
+    "do not sponsor", "not offer visa sponsorship", "no visa support", "ビザサポートなし", "ビザサポートはありません",
+]
 _EDUCATION_PATTERNS = [
     (re.compile(r"bachelor'?s?\s+degree|学士", re.IGNORECASE), "Bachelor's degree"),
     (re.compile(r"master'?s?\s+degree|修士", re.IGNORECASE), "Master's degree"),
@@ -34,12 +53,24 @@ _BUSINESS_JAPANESE_PATTERN = re.compile(
 _BUSINESS_ENGLISH_PATTERN = re.compile(r"business[- ]level english|business english|ビジネスレベルの?英語", re.IGNORECASE)
 
 
-def _find_skills(text_lower: str) -> list[str]:
-    found = []
-    for skill in SKILL_CATALOG:
-        if skill.lower() in text_lower:
-            found.append(skill)
-    return found
+def _find_jlpt(description: str) -> str | None:
+    ja = _JLPT_JA_PATTERN.search(description)
+    if ja:
+        return f"N{ja.group(1)}"
+    for match in _JLPT_PATTERN.finditer(description):
+        window = description[max(0, match.start() - 40) : match.end() + 40]
+        if match.group(1) or _JLPT_CONTEXT.search(window):
+            return f"N{match.group(2)}"
+    return None
+
+
+def _find_minimum_experience(description: str) -> float | None:
+    for pattern in (_EXPERIENCE_EN_PATTERN, _EXPERIENCE_JA_PATTERN):
+        for match in pattern.finditer(description):
+            years = int(match.group(1))
+            if 0 < years <= _MAX_PLAUSIBLE_EXPERIENCE:
+                return float(years)
+    return None
 
 
 def _split_required_preferred(description: str) -> tuple[str, str]:
@@ -57,11 +88,10 @@ def _split_required_preferred(description: str) -> tuple[str, str]:
 class DevLLMProvider(LLMProvider):
     def extract_requirements(self, job_title: str, description: str, language: str) -> ExtractionJSON:
         required_text, preferred_text = _split_required_preferred(description)
-        required_skills = _find_skills(required_text.lower())
-        preferred_skills = [s for s in _find_skills(preferred_text.lower()) if s not in required_skills]
+        required_skills = find_skills(required_text)
+        preferred_skills = [s for s in find_skills(preferred_text) if s not in required_skills]
 
-        jlpt_match = _JLPT_JA_PATTERN.search(description) or _JLPT_PATTERN.search(description)
-        jlpt_requirement = f"N{jlpt_match.group(1)}" if jlpt_match else None
+        jlpt_requirement = _find_jlpt(description)
 
         japanese_requirement = None
         if _BUSINESS_JAPANESE_PATTERN.search(description):
@@ -71,8 +101,7 @@ class DevLLMProvider(LLMProvider):
 
         english_requirement = "Business-level English required" if _BUSINESS_ENGLISH_PATTERN.search(description) else None
 
-        exp_match = _EXPERIENCE_PATTERN.search(description)
-        minimum_experience = float(exp_match.group(1)) if exp_match else None
+        minimum_experience = _find_minimum_experience(description)
 
         education_requirement = None
         for pattern, label in _EDUCATION_PATTERNS:
@@ -88,10 +117,10 @@ class DevLLMProvider(LLMProvider):
             new_graduate_allowed = False
 
         visa_sponsorship = "NOT_STATED"
-        if any(marker in lowered for marker in _VISA_POSITIVE):
-            visa_sponsorship = "YES"
-        elif any(marker in lowered for marker in _VISA_NEGATIVE):
+        if any(marker in lowered for marker in _VISA_NEGATIVE):
             visa_sponsorship = "NO"
+        elif any(marker in lowered for marker in _VISA_POSITIVE):
+            visa_sponsorship = "YES"
 
         return ExtractionJSON(
             required_skills=required_skills,

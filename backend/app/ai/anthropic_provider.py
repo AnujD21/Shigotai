@@ -1,90 +1,86 @@
 """Anthropic-backed extraction provider.
 
-Used automatically when LLM_PROVIDER=anthropic and LLM_API_KEY is set. Falls
-back to the same strict-JSON contract as DevLLMProvider so the rest of the
-pipeline (validation, matching) never needs to know which provider produced
-the data.
+Used when LLM_PROVIDER=anthropic and LLM_API_KEY is set. Structured outputs
+constrain the response to the same Pydantic contracts the other providers
+use, and any API error, refusal, or truncated response falls back to the
+rule-based DevLLMProvider so the pipeline never hard-fails.
 """
 
 import json
+import logging
+from typing import TypeVar
 
-import httpx
+import anthropic
+import pydantic
 
 from app.ai.base import ExtractionJSON, LLMProvider
 from app.ai.dev_provider import DevLLMProvider
+from app.ai.prompts import (
+    JOB_EXTRACTION_SYSTEM_PROMPT,
+    MATCH_EXPLANATION_SYSTEM_PROMPT,
+    RESUME_EXTRACTION_SYSTEM_PROMPT,
+)
+from app.ai.schemas import JobRequirementsLLM, ResumeLLMExtraction
 
-_EXTRACTION_SYSTEM_PROMPT = """You extract structured hiring requirements from a job posting.
-Return ONLY a JSON object with this exact shape:
-{
-  "required_skills": string[],
-  "preferred_skills": string[],
-  "minimum_experience": number | null,
-  "education_requirement": string | null,
-  "jlpt_requirement": string | null,
-  "japanese_requirement": string | null,
-  "english_requirement": string | null,
-  "new_graduate_allowed": boolean | null,
-  "visa_sponsorship": "YES" | "NO" | "NOT_STATED"
-}
-Rules:
-- Only include a value when the posting states it explicitly or very clearly implies it.
-- Never invent a JLPT level. If Japanese ability is required but no JLPT level is given, set jlpt_requirement to null and describe the requirement in japanese_requirement instead.
-- If visa sponsorship is not mentioned, use "NOT_STATED".
-- Respond with JSON only, no commentary."""
+logger = logging.getLogger(__name__)
 
-_EXPLAIN_SYSTEM_PROMPT = """You write a short, honest explanation (2-4 sentences) of why a candidate does or
-does not match a job, given a structured requirement breakdown. Be specific, cite the actual
-requirement labels, and never claim a match that the data does not support."""
+T = TypeVar("T", bound=pydantic.BaseModel)
+
+# Extraction and short explanations don't benefit from deep reasoning; low
+# effort keeps latency inside a web request and cost near zero.
+_EFFORT = "low"
 
 
 class AnthropicLLMProvider(LLMProvider):
+    is_llm = True
+
     def __init__(self, api_key: str, model: str):
-        self._api_key = api_key
+        self._client = anthropic.Anthropic(api_key=api_key, timeout=60.0, max_retries=2)
         self._model = model
         self._fallback = DevLLMProvider()
 
-    def _call(self, system: str, user: str) -> str | None:
+    def _parse(self, system: str, user: str, output_type: type[T], max_tokens: int) -> T | None:
         try:
-            response = httpx.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": self._api_key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": self._model,
-                    "max_tokens": 1024,
-                    "system": system,
-                    "messages": [{"role": "user", "content": user}],
-                },
-                timeout=30.0,
+            response = self._client.messages.parse(
+                model=self._model,
+                max_tokens=max_tokens,
+                system=system,
+                messages=[{"role": "user", "content": user}],
+                output_format=output_type,
+                output_config={"effort": _EFFORT},
             )
-            response.raise_for_status()
-            data = response.json()
-            return data["content"][0]["text"]
-        except (httpx.HTTPError, KeyError, IndexError):
+        except anthropic.NotFoundError:
+            logger.error("Anthropic model %r not found -- check LLM_MODEL", self._model)
+            return None
+        except anthropic.RateLimitError:
+            logger.warning("Anthropic rate limit hit; using rule-based fallback for this call")
+            return None
+        except anthropic.APIStatusError as exc:
+            logger.warning("Anthropic API error %s: %s", exc.status_code, exc.message)
+            return None
+        except anthropic.APIConnectionError:
+            logger.warning("Couldn't reach the Anthropic API; using rule-based fallback")
+            return None
+        except pydantic.ValidationError:
+            logger.warning("Anthropic response didn't match %s", output_type.__name__)
             return None
 
+        if response.stop_reason != "end_turn":
+            # "refusal" or "max_tokens": either way the JSON can't be trusted.
+            logger.warning("Anthropic extraction stopped with %s", response.stop_reason)
+            return None
+        return response.parsed_output
+
     def extract_requirements(self, job_title: str, description: str, language: str) -> ExtractionJSON:
-        text = self._call(_EXTRACTION_SYSTEM_PROMPT, f"Job title: {job_title}\n\nDescription:\n{description}")
-        if not text:
+        parsed = self._parse(
+            JOB_EXTRACTION_SYSTEM_PROMPT,
+            f"<job_title>{job_title}</job_title>\n<job_posting>\n{description}\n</job_posting>",
+            JobRequirementsLLM,
+            max_tokens=4000,
+        )
+        if parsed is None:
             return self._fallback.extract_requirements(job_title, description, language)
-        try:
-            parsed = json.loads(text)
-            return ExtractionJSON(
-                required_skills=list(parsed.get("required_skills") or []),
-                preferred_skills=list(parsed.get("preferred_skills") or []),
-                minimum_experience=parsed.get("minimum_experience"),
-                education_requirement=parsed.get("education_requirement"),
-                jlpt_requirement=parsed.get("jlpt_requirement"),
-                japanese_requirement=parsed.get("japanese_requirement"),
-                english_requirement=parsed.get("english_requirement"),
-                new_graduate_allowed=parsed.get("new_graduate_allowed"),
-                visa_sponsorship=parsed.get("visa_sponsorship") or "NOT_STATED",
-            )
-        except (json.JSONDecodeError, TypeError):
-            return self._fallback.extract_requirements(job_title, description, language)
+        return ExtractionJSON(**parsed.model_dump())
 
     def explain_match(
         self,
@@ -93,9 +89,35 @@ class AnthropicLLMProvider(LLMProvider):
         requirement_breakdown: list[dict],
         match_strength: str,
     ) -> str:
-        text = self._call(
-            _EXPLAIN_SYSTEM_PROMPT,
-            f"Job: {job_title} at {company_name}\nMatch strength: {match_strength}\n"
-            f"Requirement breakdown: {json.dumps(requirement_breakdown)}",
+        try:
+            response = self._client.messages.create(
+                model=self._model,
+                max_tokens=2000,
+                system=MATCH_EXPLANATION_SYSTEM_PROMPT,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": f"Job: {job_title} at {company_name}\nMatch strength: {match_strength}\n"
+                        f"Requirement breakdown: {json.dumps(requirement_breakdown, ensure_ascii=False)}",
+                    }
+                ],
+                output_config={"effort": _EFFORT},
+            )
+        except anthropic.APIError:
+            logger.warning("Anthropic explanation failed; using rule-based explanation")
+            return self._fallback.explain_match(job_title, company_name, requirement_breakdown, match_strength)
+
+        # Current models may return thinking blocks before the answer, so pick
+        # the text block rather than assuming it's content[0].
+        text = next((block.text for block in response.content if block.type == "text"), "").strip()
+        if response.stop_reason != "end_turn" or not text:
+            return self._fallback.explain_match(job_title, company_name, requirement_breakdown, match_strength)
+        return text
+
+    def extract_resume(self, resume_text: str) -> ResumeLLMExtraction | None:
+        return self._parse(
+            RESUME_EXTRACTION_SYSTEM_PROMPT,
+            f"<resume>\n{resume_text}\n</resume>",
+            ResumeLLMExtraction,
+            max_tokens=8000,
         )
-        return text or self._fallback.explain_match(job_title, company_name, requirement_breakdown, match_strength)

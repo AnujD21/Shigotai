@@ -162,12 +162,13 @@ export function JobsBrowser() {
             {data.total} job{data.total === 1 ? "" : "s"} found
           </h2>
           <div className="grid gap-4 md:grid-cols-2">
-            {data.items.map((job) => (
+            {data.items.map((job, i) => (
               <JobCard
                 key={job.id}
                 job={job}
                 saved={user ? savedIds.has(job.id) : undefined}
                 onToggleSave={handleToggleSave}
+                index={i}
               />
             ))}
           </div>

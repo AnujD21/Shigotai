@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import useSWR from "swr";
+import { AnimatePresence, motion } from "framer-motion";
 import { Logo } from "@/components/ui/logo";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { ErrorState } from "@/components/ui/state-views";
@@ -80,23 +81,32 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-[var(--color-bg)] md:flex">
       {/* Desktop sidebar */}
-      <aside className="hidden w-60 shrink-0 flex-col border-r border-[var(--color-border)] px-4 py-6 md:flex">
+      <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-[var(--color-border)] bg-[var(--color-bg-subtle)]/40 px-4 py-6 md:flex">
         <div className="px-2">
           <Logo />
         </div>
-        <nav className="mt-8 flex-1 space-y-1">
+        <nav className="isolate mt-8 flex-1 space-y-1">
           {NAV_ITEMS.map((item) => {
             const active = pathname.startsWith(item.href);
             return (
               <Link
                 key={item.href}
                 href={item.href}
+                aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex items-center gap-2.5 rounded-[var(--radius-sm)] px-3 py-2.5 text-[13.5px] font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-text-primary)]",
-                  active && "bg-[var(--color-bg-subtle)] text-[var(--color-text-primary)]"
+                  "relative flex items-center gap-2.5 rounded-[var(--radius-sm)] px-3 py-2.5 text-[13.5px] font-medium text-[var(--color-text-secondary)] transition-colors hover:text-[var(--color-text-primary)]",
+                  !active && "hover:bg-[var(--color-bg-subtle)]/60",
+                  active && "text-[var(--color-text-primary)]"
                 )}
               >
-                <item.icon className="size-4" aria-hidden />
+                {active && (
+                  <motion.span
+                    layoutId="sidebar-active"
+                    className="absolute inset-0 -z-10 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-xs)]"
+                    transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                  />
+                )}
+                <item.icon className={cn("size-4", active && "text-[var(--color-accent)]")} aria-hidden />
                 {item.label}
                 {item.href === "/notifications" && unreadCount > 0 && (
                   <span className="ml-auto flex size-5 items-center justify-center rounded-full bg-[var(--color-accent)] text-[10px] font-semibold text-[var(--color-text-on-accent)]">
@@ -155,10 +165,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </header>
 
       {/* Mobile drawer */}
+      <AnimatePresence>
       {mobileOpen && (
         <div className="fixed inset-0 z-50 md:hidden">
-          <div className="absolute inset-0 bg-[var(--color-overlay)]" onClick={() => setMobileOpen(false)} />
-          <div className="absolute right-0 top-0 h-full w-72 max-w-[80vw] bg-[var(--color-surface)] p-5 shadow-[var(--shadow-lg)]">
+          <motion.div
+            className="absolute inset-0 bg-[var(--color-overlay)]"
+            onClick={() => setMobileOpen(false)}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+          />
+          <motion.div
+            className="absolute right-0 top-0 h-full w-72 max-w-[80vw] bg-[var(--color-surface)] p-5 shadow-[var(--shadow-lg)]"
+            initial={{ x: "100%" }}
+            animate={{ x: 0 }}
+            exit={{ x: "100%" }}
+            transition={{ type: "spring", stiffness: 380, damping: 38 }}
+          >
             <div className="flex items-center justify-between">
               <p className="text-[13px] font-medium text-[var(--color-text-primary)]">{user.full_name}</p>
               <button
@@ -200,11 +224,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 Log out
               </button>
             </div>
-          </div>
+          </motion.div>
         </div>
       )}
+      </AnimatePresence>
 
-      <main className="min-w-0 flex-1 pb-20 md:pb-0">
+      <main id="main-content" className="min-w-0 flex-1 pb-20 md:pb-0">
         <div className="mx-auto max-w-5xl px-4 py-6 md:px-8 md:py-10">{children}</div>
       </main>
 
@@ -216,11 +241,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Link
               key={item.href}
               href={item.href}
+              aria-current={active ? "page" : undefined}
               className={cn(
-                "flex flex-col items-center gap-1 py-2.5 text-[10.5px] font-medium text-[var(--color-text-tertiary)]",
+                "relative flex flex-col items-center gap-1 py-2.5 text-[10.5px] font-medium text-[var(--color-text-tertiary)] transition-colors",
                 active && "text-[var(--color-accent)]"
               )}
             >
+              {active && (
+                <motion.span
+                  layoutId="tab-active"
+                  className="absolute inset-x-5 top-0 h-0.5 rounded-full bg-[var(--color-accent)]"
+                  transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                />
+              )}
               <item.icon className="size-[18px]" aria-hidden />
               {item.mobileLabel}
             </Link>

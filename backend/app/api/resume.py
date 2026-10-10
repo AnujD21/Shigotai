@@ -18,7 +18,9 @@ _ALLOWED_CONTENT_TYPES = {
     ".pdf": "application/pdf",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
-_MAX_SIZE_BYTES = 5 * 1024 * 1024
+# Vercel rejects request bodies over 4.5MB before they reach the app, so stay
+# under that with room for the multipart envelope.
+_MAX_SIZE_BYTES = 4 * 1024 * 1024
 
 
 @router.post("/upload", response_model=ResumeExtractionResult)
@@ -33,7 +35,7 @@ async def upload_resume(
 
     content = await file.read()
     if len(content) > _MAX_SIZE_BYTES:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Resume file is too large (5MB max).")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Resume file is too large (4MB max).")
 
     try:
         result = parse_resume(file.filename, content)
@@ -48,7 +50,7 @@ async def upload_resume(
         content_type=_ALLOWED_CONTENT_TYPES[extension],
     )
 
-    profile.resume_file_path = stored_ref
+    profile.resume_file_path = stored_ref or None
     profile.resume_original_filename = file.filename
     db.commit()
 

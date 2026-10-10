@@ -1,8 +1,11 @@
+import re
+from datetime import date
+
 from sqlalchemy.orm import Session
 
 from app.matching.skill_taxonomy import canonical_skill_name, infer_category, is_ai_ml_skill
 from app.models.profile import Certification, Education, Experience, Profile, Project, Skill, UserSkill
-from app.schemas.profile import ProfileUpdate
+from app.schemas.profile import ExperienceIn, ProfileUpdate
 
 _COMPLETENESS_WEIGHTS = [
     ("country", 5),
@@ -14,6 +17,45 @@ _COMPLETENESS_WEIGHTS = [
     ("skills", 25),
     ("projects", 15),
 ]
+
+
+def _parse_month(value: str | None) -> date | None:
+    """'2023-07', '2023/7', or '2023' -> first day of that month."""
+    if not value:
+        return None
+    match = re.match(r"\s*(\d{4})(?:\s*[-/.年]\s*(\d{1,2}))?", value)
+    if not match:
+        return None
+    month = int(match.group(2) or 1)
+    return date(int(match.group(1)), month, 1) if 1 <= month <= 12 else None
+
+
+def derive_years_of_experience(roles: list[ExperienceIn], today: date | None = None) -> float | None:
+    """Full-time experience in years from dated roles, counting overlapping
+    roles once and excluding internships. None when no role has a start date."""
+    today = today or date.today()
+    spans = []
+    for role in roles:
+        start = _parse_month(role.start_date)
+        if role.is_internship or start is None:
+            continue
+        end = _parse_month(role.end_date) or today
+        if end > start:
+            spans.append((start, min(end, today)))
+    if not spans:
+        return None
+
+    spans.sort()
+    total_days = 0
+    current_start, current_end = spans[0]
+    for start, end in spans[1:]:
+        if start <= current_end:
+            current_end = max(current_end, end)
+        else:
+            total_days += (current_end - current_start).days
+            current_start, current_end = start, end
+    total_days += (current_end - current_start).days
+    return round(total_days / 365.25, 1)
 
 
 def get_or_create_profile(db: Session, user_id: str) -> Profile:
@@ -55,6 +97,13 @@ def update_profile(db: Session, profile: Profile, data: ProfileUpdate) -> Profil
         db.flush()
         for item in data.experience:
             profile.experience.append(Experience(**item.model_dump(exclude={"id"})))
+        # The profile form has no "years of experience" input, but matching
+        # checks postings' minimum-experience requirements against it -- so
+        # derive it from the dated roles unless the client set it explicitly.
+        if "years_of_experience" not in scalar_fields:
+            derived = derive_years_of_experience(data.experience)
+            if derived is not None:
+                profile.years_of_experience = derived
 
     if data.projects is not None:
         profile.projects.clear()

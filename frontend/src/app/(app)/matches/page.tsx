@@ -86,9 +86,9 @@ export default function MatchesPage() {
 
       {!error && !isLoading && filtered.length > 0 && (
         <div className="grid gap-4 md:grid-cols-2">
-          {filtered.map((match) => (
+          {filtered.map((match, i) => (
             <div key={match.id} className="flex flex-col gap-2.5">
-              <JobCard job={match.job} />
+              <JobCard job={match.job} index={i} />
               {match.ai_explanation && (
                 <p className="line-clamp-2 px-1 text-[13px] leading-relaxed text-[var(--color-text-secondary)]">
                   {match.ai_explanation}

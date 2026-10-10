@@ -49,10 +49,9 @@ export function Dialog({
             role="dialog"
             aria-modal="true"
             aria-labelledby="dialog-title"
-            initial={{ opacity: 0, scale: 0.97, y: 8 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.97, y: 8 }}
-            transition={{ duration: 0.18 }}
+            initial={{ opacity: 0, scale: 0.96, y: 12 }}
+            animate={{ opacity: 1, scale: 1, y: 0, transition: { type: "spring", stiffness: 420, damping: 32 } }}
+            exit={{ opacity: 0, scale: 0.98, y: 6, transition: { duration: 0.14 } }}
             className={cn(
               "relative w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-[var(--shadow-lg)]",
               className
