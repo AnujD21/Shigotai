@@ -4,7 +4,7 @@ import { LinkButton } from "@/components/ui/link-button";
 import { FadeIn } from "@/components/motion/fade-in";
 
 export const metadata: Metadata = {
-  title: "About — Shigotai",
+  title: "About",
   description:
     "Why Shigotai exists: closing the gap between resumes and what Japanese employers actually state as requirements, with transparent fact-vs-interpretation matching.",
 };

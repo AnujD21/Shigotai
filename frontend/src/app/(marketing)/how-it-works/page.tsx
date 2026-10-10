@@ -13,7 +13,7 @@ import { LinkButton } from "@/components/ui/link-button";
 import { FadeIn } from "@/components/motion/fade-in";
 
 export const metadata: Metadata = {
-  title: "How it works — Shigotai",
+  title: "How it works",
   description:
     "How Shigotai builds your Career DNA, runs a three-stage matching engine against real job requirements, and keeps you notified without the noise.",
 };

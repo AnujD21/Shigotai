@@ -18,7 +18,7 @@ from app.models.enums import MatchStrength, NotificationFrequency, NotificationT
 from app.models.interaction import Match
 from app.models.job import Job
 from app.models.notification import Notification, NotificationPreference
-from app.notifications.dev_providers import DevEmailProvider
+from app.notifications.provider import get_email_provider
 from app.notifications.templates import match_email
 
 
@@ -50,8 +50,6 @@ def maybe_notify(
         return None
     if preference.notify_high_match_only and match.match_strength != MatchStrength.STRONG:
         return None
-    if _daily_notification_count(db, match.user_id) >= preference.max_notifications_per_day:
-        return None
 
     is_first_time = previous_strength is None
     became_match = (
@@ -61,6 +59,10 @@ def maybe_notify(
     )
 
     if not is_first_time and not became_match:
+        return None
+    # After the in-memory checks: recomputes run this for every active job,
+    # and most matches aren't new, so this query is usually skipped.
+    if _daily_notification_count(db, match.user_id) >= preference.max_notifications_per_day:
         return None
 
     notif_type = NotificationType.JOB_BECAME_MATCH if became_match else NotificationType.NEW_MATCH
@@ -96,7 +98,7 @@ def maybe_notify(
 
     if preference.email_enabled and preference.frequency == NotificationFrequency.INSTANT:
         subject, html_body, text_body = match_email(job.title, job.company.name, job.location or "Japan", matched, missing, job_url)
-        DevEmailProvider().send_email(user_email, subject, html_body, text_body)
+        get_email_provider().send_email(user_email, subject, html_body, text_body)
 
     db.flush()
     return notification

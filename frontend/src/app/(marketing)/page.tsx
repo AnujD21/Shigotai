@@ -8,7 +8,8 @@ import { PrinciplesBento } from "@/components/marketing/principles-bento";
 import { FadeIn } from "@/components/motion/fade-in";
 
 export const metadata: Metadata = {
-  title: "Shigotai — Find the Japanese jobs that fit you",
+  // absolute: the layout's "%s — Shigotai" template would repeat the name.
+  title: { absolute: "Shigotai — Find the Japanese jobs that fit you" },
   description:
     "Shigotai analyzes your skills, Japanese ability, education and experience to find currently active opportunities at Japanese companies.",
 };

@@ -87,7 +87,23 @@ def fill_missing_explanations(matches: list[tuple[Match, Job]], llm_budget: int)
         match.ai_explanation = _explain(job, match.requirement_breakdown, match.match_strength, provider)
 
 
-def compute_match(db: Session, profile: Profile, job: Job, generate_explanation: bool = True) -> Match:
+_LOOK_UP = object()
+
+
+def compute_match(
+    db: Session,
+    profile: Profile,
+    job: Job,
+    generate_explanation: bool = True,
+    existing: Match | None | object = _LOOK_UP,
+    flush: bool = True,
+) -> Match:
+    """Score one job for one profile and upsert the Match.
+
+    Batch callers pass `existing` (the stored Match or None, from one
+    prefetch) and `flush=False`: across hundreds of jobs, a lookup and a
+    flush per job are the bulk of a recompute's database round trips.
+    """
     requirement = job.requirement
     det = evaluate(profile, requirement, job.location, job.work_mode.value) if requirement else None
 
@@ -112,7 +128,8 @@ def compute_match(db: Session, profile: Profile, job: Job, generate_explanation:
         {"label": r.label, "category": r.category, "state": r.state, "detail": r.detail} for r in (det.rows if det else [])
     ]
 
-    existing = db.query(Match).filter(Match.user_id == profile.user_id, Match.job_id == job.id).first()
+    if existing is _LOOK_UP:
+        existing = db.query(Match).filter(Match.user_id == profile.user_id, Match.job_id == job.id).first()
     if existing is None:
         existing = Match(user_id=profile.user_id, job_id=job.id)
         db.add(existing)
@@ -138,5 +155,6 @@ def compute_match(db: Session, profile: Profile, job: Job, generate_explanation:
             _explain(job, breakdown, strength, get_llm_provider()) if generate_explanation else None
         )
 
-    db.flush()
+    if flush:
+        db.flush()
     return existing

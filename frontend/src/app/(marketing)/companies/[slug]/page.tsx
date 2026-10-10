@@ -18,9 +18,9 @@ async function getCompany(slug: string): Promise<CompanyDetail | null> {
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
   const company = await getCompany(slug);
-  if (!company) return { title: "Company not found — Shigotai" };
+  if (!company) return { title: "Company not found" };
   return {
-    title: `${company.name} — Shigotai`,
+    title: company.name,
     description: company.description ?? `${company.name} jobs and hiring info on Shigotai.`,
   };
 }

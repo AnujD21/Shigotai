@@ -5,7 +5,7 @@ import { JobCardSkeleton } from "@/components/ui/skeleton";
 import { JobsBrowser } from "@/components/jobs/jobs-browser";
 
 export const metadata: Metadata = {
-  title: "Discover Jobs — Shigotai",
+  title: "Discover Jobs",
   description:
     "Search and filter currently active Japan-focused job listings. Log in to see a transparent, requirement-by-requirement match for every role.",
 };

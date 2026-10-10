@@ -30,18 +30,19 @@ def recompute_matches_for_user(db: Session, user: User, notify: bool = True) -> 
     preference = db.query(NotificationPreference).filter(NotificationPreference.user_id == user.id).first()
     jobs = (
         db.query(Job)
-        .options(joinedload(Job.company), joinedload(Job.requirement))
+        .options(joinedload(Job.company), joinedload(Job.requirement), joinedload(Job.embedding))
         .filter(Job.status == JobStatus.ACTIVE)
         .all()
     )
+    stored = {m.job_id: m for m in db.query(Match).filter(Match.user_id == user.id)}
 
     results = []
     for job in jobs:
-        previous = db.query(Match).filter(Match.user_id == user.id, Match.job_id == job.id).first()
+        previous = stored.get(job.id)
         previous_strength = previous.match_strength if previous else None
         previous_pass = previous.deterministic_pass if previous else None
 
-        match = compute_match(db, profile, job, generate_explanation=False)
+        match = compute_match(db, profile, job, generate_explanation=False, existing=previous, flush=False)
         results.append(match)
 
         if notify and preference:
@@ -69,16 +70,18 @@ def recompute_matches_for_job(db: Session, job: Job, notify: bool = True) -> lis
     profiles = db.query(Profile).all()
     users_by_id = {u.id: u for u in db.query(User).all()}
 
+    stored = {m.user_id: m for m in db.query(Match).filter(Match.job_id == job.id)}
+
     results = []
     for profile in profiles:
         user = users_by_id.get(profile.user_id)
         if not user:
             continue
-        previous = db.query(Match).filter(Match.user_id == user.id, Match.job_id == job.id).first()
+        previous = stored.get(user.id)
         previous_strength = previous.match_strength if previous else None
         previous_pass = previous.deterministic_pass if previous else None
 
-        match = compute_match(db, profile, job, generate_explanation=False)
+        match = compute_match(db, profile, job, generate_explanation=False, existing=previous, flush=False)
         results.append(match)
 
         preference = preference_by_user.get(user.id)

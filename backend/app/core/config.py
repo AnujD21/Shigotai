@@ -1,6 +1,7 @@
+import json
 from functools import lru_cache
 
-from pydantic import field_validator, model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -71,10 +72,13 @@ class Settings(BaseSettings):
     storage_endpoint_url: str = ""
     storage_public_base_url: str = ""
 
-    cors_origins: list[str] = [
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ]
+    # Comma-separated ("https://a.com,https://b.com") or a JSON list. Kept as
+    # a plain string: pydantic-settings JSON-decodes list-typed env vars
+    # before any validator runs, so a list[str] field crashes on the
+    # comma-separated form most hosting dashboards make natural.
+    cors_origins_setting: str = Field(
+        default="http://localhost:3000,http://127.0.0.1:3000", validation_alias="CORS_ORIGINS"
+    )
 
     # Used to build links in outgoing emails (verify-email, password reset,
     # match notifications). Must be the real deployed frontend URL in
@@ -89,16 +93,12 @@ class Settings(BaseSettings):
             raise ValueError("AUTH_SECRET must be set to a long random value when ENVIRONMENT=production")
         return self
 
-    @field_validator("cors_origins", mode="before")
-    @classmethod
-    def _split_cors_origins(cls, value: object) -> object:
-        # Lets CORS_ORIGINS be set as a plain comma-separated string in a
-        # platform's env var UI (e.g. "https://app.example.com,https://example.com")
-        # instead of requiring JSON-list syntax.
-        if isinstance(value, str):
-            return [origin.strip() for origin in value.split(",") if origin.strip()]
-        return value
-
+    @property
+    def cors_origins(self) -> list[str]:
+        value = self.cors_origins_setting.strip()
+        if value.startswith("["):
+            return [str(origin).strip() for origin in json.loads(value) if str(origin).strip()]
+        return [origin.strip() for origin in value.split(",") if origin.strip()]
 
 @lru_cache
 def get_settings() -> Settings:
