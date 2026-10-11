@@ -19,8 +19,10 @@ class SMTPEmailProvider(EmailProvider):
     def __init__(self, host: str, port: int, username: str, password: str, from_address: str):
         self._host = host
         self._port = port
-        self._username = username
-        self._password = password
+        self._username = username.strip()
+        # Google displays app passwords in groups ("abcd efgh ijkl mnop");
+        # pasted with the spaces, the SMTP login fails.
+        self._password = password.replace(" ", "") if host.strip().endswith("gmail.com") else password
         self._from_address = from_address
 
     def send_email(self, to: str, subject: str, html_body: str, text_body: str) -> None:
