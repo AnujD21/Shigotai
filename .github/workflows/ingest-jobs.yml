@@ -53,6 +53,15 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: backend/requirements.txt
+      - name: Check required secrets
+        run: |
+          missing=""
+          [ -n "$DATABASE_URL" ] || missing="$missing DATABASE_URL"
+          [ -n "$AUTH_SECRET" ] || missing="$missing AUTH_SECRET"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing. Add them under Settings -> Secrets and variables -> Actions (see DEPLOYMENT.md step 7)."
+            exit 1
+          fi
       - run: pip install -r requirements.txt
       - name: Apply database migrations
         run: python -m alembic upgrade head
